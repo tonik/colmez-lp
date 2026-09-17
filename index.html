@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Colmez — Powering next-generation hazardous waste teams</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
 
@@ -13,6 +13,17 @@
   <!-- STAGE: hero -> photo rises -> dissolves into pattern -> waste list -->
   <section class="stage" id="stage">
     <div class="stage__pin">
+
+      <!-- mobile hero (display:none on desktop): the static, single-column
+           take on the hero — wordmark, headline, CTA, photo. The desktop
+           choreography (preloader, pinned stage, goo) never runs on mobile. -->
+      <div class="mhero">
+        <img class="mhero__logo mfr" src="assets/img/logo.svg" alt="Colmez" width="1416" height="191">
+        <p class="mhero__headline"><span class="hw">Powering</span> <span class="hw">next-generation</span> <span class="hw">hazardous</span> <span class="hw">waste</span> <span class="hw">teams.</span></p>
+        <a class="mhero__cta" href="#contact"><span>Book a meeting</span><span aria-hidden="true">&rarr;</span></a>
+        <!-- the photo itself is the desktop's #photoLayer box (photo goo-dissolves
+             into the vector pattern as it scrolls up), shown in flow on mobile -->
+      </div>
 
       <!-- hero copy (gets covered by the rising photo) -->
       <div class="hero-copy" id="heroCopy">
@@ -60,13 +71,13 @@
       <canvas class="nav__logo-fx" id="logoFx" aria-hidden="true"></canvas>
     </a>
     <a class="cta" id="navCta" href="#contact">
-      <span>Book a meeting</span>
+      <span class="cta__label">Book a meeting</span>
       <span class="cta__arrow" aria-hidden="true">→</span>
       <canvas class="cta__fx" id="ctaFx" aria-hidden="true"></canvas>
     </a>
     <!-- compact CTA: forms while the big pair is still dissolving -->
     <a class="cta cta--mini" id="navCtaMini" href="#contact" aria-hidden="true" tabindex="-1">
-      <span>Book a meeting</span>
+      <span class="cta__label">Book a meeting</span>
       <span class="cta__arrow" aria-hidden="true">→</span>
     </a>
   </header>
@@ -94,7 +105,7 @@
             <span class="crisis-item__num"><span class="crisis-item__chip"><span class="cw">001</span></span></span>
             <div class="crisis-item__text">
               <h3 class="crisis-item__title"><span class="cw">At</span> <span class="cw">capacity</span></h3>
-              <p class="crisis-item__desc"><span class="cw">America's</span> <span class="cw">hazardous</span> <span class="cw">waste</span> <span class="cw">infrastructure</span> <span class="cw">is</span> <span class="cw">running</span> <span class="cw">at</span> <span class="cw">its</span> <span class="cw">limit.</span> <span class="cw">Demand</span> <span class="cw">from</span> <span class="cw">new</span> <span class="cw">fabs,</span> <span class="cw">plants</span> <span class="cw">and</span> <span class="cw">data</span> <span class="cw">centers</span> <span class="cw">is</span> <span class="cw">growing</span> <span class="cw">faster</span> <span class="cw">than</span> <span class="cw">any</span> <span class="cw">facility</span> <span class="cw">can</span> <span class="cw">be</span> <span class="cw">permitted</span> <span class="cw">and</span> <span class="cw">built.</span></p>
+              <p class="crisis-item__desc blk">America's hazardous waste infrastructure is running at its limit. Demand from new fabs, plants and data centers is growing faster than any facility can be permitted and built.</p>
             </div>
           </div>
           <div class="crisis-item__media">
@@ -109,11 +120,11 @@
             <span class="crisis-item__num"><span class="crisis-item__chip"><span class="cw">002</span></span></span>
             <div class="crisis-item__text">
               <h3 class="crisis-item__title"><span class="cw">A</span> <span class="cw">national</span> <span class="cw">security</span> <span class="cw">problem</span></h3>
-              <p class="crisis-item__desc"><span class="cw">America's</span> <span class="cw">hazardous</span> <span class="cw">waste</span> <span class="cw">infrastructure</span> <span class="cw">is</span> <span class="cw">running</span> <span class="cw">at</span> <span class="cw">its</span> <span class="cw">limit.</span> <span class="cw">Demand</span> <span class="cw">from</span> <span class="cw">new</span> <span class="cw">fabs,</span> <span class="cw">plants</span> <span class="cw">and</span> <span class="cw">data</span> <span class="cw">centers</span> <span class="cw">is</span> <span class="cw">growing</span> <span class="cw">faster</span> <span class="cw">than</span> <span class="cw">any</span> <span class="cw">facility</span> <span class="cw">can</span> <span class="cw">be</span> <span class="cw">permitted</span> <span class="cw">and</span> <span class="cw">built.</span></p>
+              <p class="crisis-item__desc blk">America's hazardous waste infrastructure is running at its limit. Demand from new fabs, plants and data centers is growing faster than any facility can be permitted and built.</p>
             </div>
           </div>
           <div class="crisis-item__media">
-            <img src="assets/img/crisis.jpg" alt="" loading="lazy">
+            <img src="assets/img/crisis-02.jpg" alt="Shredded industrial waste with gold-painted fragments" loading="lazy">
           </div>
         </article>
 
@@ -124,11 +135,11 @@
             <span class="crisis-item__num"><span class="crisis-item__chip"><span class="cw">003</span></span></span>
             <div class="crisis-item__text">
               <h3 class="crisis-item__title"><span class="cw">Run</span> <span class="cw">on</span> <span class="cw">phone</span> <span class="cw">calls</span></h3>
-              <p class="crisis-item__desc"><span class="cw">A</span> <span class="cw">$50</span> <span class="cw">billion</span> <span class="cw">market</span> <span class="cw">[TO&nbsp;CONFIRM],</span> <span class="cw">and</span> <span class="cw">the</span> <span class="cw">operators</span> <span class="cw">holding</span> <span class="cw">this</span> <span class="cw">infrastructure</span> <span class="cw">together</span> <span class="cw">still</span> <span class="cw">find</span> <span class="cw">business</span> <span class="cw">by</span> <span class="cw">phone,</span> <span class="cw">by</span> <span class="cw">drive-by,</span> <span class="cw">and</span> <span class="cw">by</span> <span class="cw">what</span> <span class="cw">one</span> <span class="cw">veteran</span> <span class="cw">remembers.</span></p>
+              <p class="crisis-item__desc blk">A $50 billion market [TO&nbsp;CONFIRM], and the operators holding this infrastructure together still find business by phone, by drive-by, and by what one veteran remembers.</p>
             </div>
           </div>
           <div class="crisis-item__media">
-            <img src="assets/img/crisis.jpg" alt="" loading="lazy">
+            <img src="assets/img/crisis-03.jpg" alt="Gold-plated avionics circuitry and wiring" loading="lazy">
           </div>
         </article>
 
@@ -141,15 +152,20 @@
   <section class="map" id="map">
     <p class="map__lead" id="mapLead"><span class="cw">Colmez</span> <span class="cw">is</span> <span class="cw">the</span> <span class="cw">revenue</span> <span class="cw">platform</span> <span class="cw">for</span><br><span class="cw">hazardous</span> <span class="cw">waste</span> <span class="cw">disposal</span> <span class="cw">companies.</span><br><span class="cw">It</span> <span class="cw">finds</span> <span class="cw">the</span> <span class="cw">opportunities,</span> <span class="cw">manages</span> <span class="cw">the</span><br><span class="cw">pipeline,</span> <span class="cw">and</span> <span class="cw">shortens</span> <span class="cw">every</span> <span class="cw">sales</span> <span class="cw">cycle.</span></p>
     <div class="map__stage">
-      <canvas id="mapCv" aria-label="Map of permitted hazardous waste disposal capacity across the United States" role="img"></canvas>
+      <!-- pan wrapper: same box as the stage on desktop; on mobile it is
+           wider than the viewport and the stage scrolls it horizontally
+           (map.js sizes the canvas from cv.parentElement) -->
+      <div class="map__pan">
+        <canvas id="mapCv" aria-label="Map of permitted hazardous waste disposal capacity across the United States" role="img"></canvas>
+      </div>
     </div>
   </section>
 
   <!-- QUOTE (Figma 9264:273): grey-800 band, advisor photo left, pull quote right -->
   <section class="quote" id="quote">
-    <div class="quote__media"><img src="assets/img/quote-jeff.png" alt="Jeff Feeler"></div>
+    <div class="quote__media"><img src="assets/img/team-jeff.png" alt="Jeff Feeler"></div>
     <div class="quote__body">
-      <blockquote class="quote__text"><span class="cw">“The</span> <span class="cw">teams</span> <span class="cw">that</span> <span class="cw">win</span> <span class="cw">in</span> <span class="cw">this</span> <span class="cw">industry</span> <span class="cw">are</span> <span class="cw">the</span> <span class="cw">ones</span> <span class="cw">that</span> <span class="cw">turn</span> <span class="cw">information</span> <span class="cw">into</span> <span class="cw">action</span> <span class="cw">first.</span> <span class="cw">Colmez</span> <span class="cw">keeps</span> <span class="cw">every</span> <span class="cw">sales</span> <span class="cw">cycle</span> <span class="cw">moving</span> <span class="cw">and</span> <span class="cw">puts</span> <span class="cw">more</span> <span class="cw">revenue</span> <span class="cw">on</span> <span class="cw">the</span> <span class="cw">board.”</span></blockquote>
+      <blockquote class="quote__text blk">“The teams that win in this industry are the ones that turn information into action first. Colmez keeps every sales cycle moving and puts more revenue on the board.”</blockquote>
       <div class="quote__attr">
         <p class="quote__name"><span class="cw">Jeff</span> <span class="cw">Feeler</span></p>
         <div class="quote__roles">
@@ -181,7 +197,7 @@
             </ul>
           </div>
         </div>
-        <div class="screen-item__media"><img src="assets/img/screen-radar.png" alt="Colmez product screen"></div>
+        <div class="screen-item__media"><img src="assets/img/screen-01.png" alt="Colmez — signal feed and account detail"></div>
       </div>
 
       <div class="screens__sep" aria-hidden="true"></div>
@@ -201,7 +217,7 @@
             </ul>
           </div>
         </div>
-        <div class="screen-item__media"><img src="assets/img/screen-radar.png" alt="Colmez product screen"></div>
+        <div class="screen-item__media"><img src="assets/img/screen-02.png" alt="Colmez — share of wallet by account"></div>
       </div>
 
       <div class="screens__sep" aria-hidden="true"></div>
@@ -221,17 +237,135 @@
             </ul>
           </div>
         </div>
-        <div class="screen-item__media"><img src="assets/img/screen-radar.png" alt="Colmez product screen"></div>
+        <div class="screen-item__media"><img src="assets/img/screen-03.png" alt="Colmez — signal-based pipeline"></div>
       </div>
 
     </div>
   </section>
 
+  <!-- SECURITY (Figma 9286:337): closing row of the features block. The Figma
+       frame is 1306 wide (looks unstretched) — the badge is aligned to the
+       page's 40u content margin instead, like every other right edge. -->
+  <section class="security" id="security">
+    <div class="security__left">
+      <span class="screen-item__num"><span class="screen-item__chip"><span class="cw">Security</span></span></span>
+      <h3 class="security__head"><span class="cw">Colmez</span> <span class="cw">never</span> <span class="cw">trains</span> <span class="cw">on</span> <span class="cw">one</span> <span class="cw">operator's</span> <span class="cw">data</span> <span class="cw">for</span> <span class="cw">another,</span> <span class="cw">and</span> <span class="cw">never</span> <span class="cw">competes</span> <span class="cw">for</span> <span class="cw">your</span> <span class="cw">accounts.</span></h3>
+    </div>
+    <img class="security__badge fr" src="assets/img/security-badge.svg" alt="AICPA SOC 2 badge" width="220" height="220">
+  </section>
+
+  <!-- TEAM (Figma 9286:278 layout + live-site content): pinned member
+       carousel — scroll cycles the portrait strip, activates the name in the
+       list and swaps the bio. Copy, roles and logos pulled from colmez.com
+       (the Figma "CTO" on Rayhan was a placeholder — the site says CEO). -->
+  <section class="team" id="team">
+    <div class="team__pin">
+      <h2 class="team__head"><span class="cw">Built</span> <span class="cw">with</span> <span class="cw">the</span> <span class="cw">people</span><br><span class="cw">who</span> <span class="cw">ran</span> <span class="cw">this</span> <span class="cw">industry.</span></h2>
+      <ul class="team__list">
+        <li class="is-active"><div>
+          <h3 class="team__name"><span class="cw">Rayhan</span> <span class="cw">Razzak</span></h3>
+          <span class="team__chip fr">CEO</span>
+        </div></li>
+        <li><div class="fr"><span class="team__name">Brian Meng</span><span class="team__chip">CTO</span></div></li>
+        <li><div class="fr"><span class="team__name">Numair Razzak</span><span class="team__chip">COO</span></div></li>
+        <li><div class="fr"><span class="team__name">Jeff Feeler</span><span class="team__chip">Strategic Advisor</span></div></li>
+      </ul>
+      <div class="team__bio">
+        <div class="team__bio-item">
+          <p class="team__desc fr">Rayhan studied at Stanford and built quantitative systems in trading and medicine.</p>
+          <div class="team__logos fr">
+            <div class="team__logos-row">
+              <img src="assets/img/logo-stanford.png" alt="Stanford University" style="width: calc(82.5 * var(--u))">
+              <img src="assets/img/logo-susquehanna.png" alt="Susquehanna" style="width: calc(190.3 * var(--u))">
+            </div>
+            <div class="team__logos-row">
+              <img src="assets/img/logo-peak6.png" alt="PEAK6" style="width: calc(81 * var(--u))">
+              <img src="assets/img/logo-stanford-med.png" alt="Stanford Medicine" style="width: calc(180.5 * var(--u))">
+            </div>
+          </div>
+        </div>
+        <div class="team__bio-item">
+          <p class="team__desc">Brian studied at Berkeley and built machine learning systems for Boeing and SIG.</p>
+          <div class="team__logos">
+            <div class="team__logos-row">
+              <img src="assets/img/logo-uc-berkeley.png" alt="UC Berkeley" style="height: calc(18 * var(--u))">
+              <img src="assets/img/logo-boeing.png" alt="Boeing" style="height: calc(22 * var(--u))">
+            </div>
+            <div class="team__logos-row">
+              <img src="assets/img/logo-bair.png" alt="Berkeley Artificial Intelligence Research" style="height: calc(26 * var(--u))">
+              <img src="assets/img/logo-susquehanna.png" alt="Susquehanna" style="width: calc(190.3 * var(--u))">
+            </div>
+          </div>
+        </div>
+        <div class="team__bio-item">
+          <p class="team__desc">Numair studied at Stanford and invested in and advised environmental services companies.</p>
+          <div class="team__logos">
+            <div class="team__logos-row">
+              <img src="assets/img/logo-stanford.png" alt="Stanford University" style="width: calc(82.5 * var(--u))">
+              <img src="assets/img/logo-antin.png" alt="Antin Infrastructure Partners" style="height: calc(20 * var(--u))">
+              <img src="assets/img/logo-nomura-greentech.png" alt="Nomura Greentech" style="height: calc(26 * var(--u))">
+              <img src="assets/img/logo-ares.png" alt="Ares" style="height: calc(18 * var(--u))">
+            </div>
+          </div>
+        </div>
+        <div class="team__bio-item">
+          <p class="team__desc">Jeff led US Ecology as Chairman, President and CEO and now advises industry boards.</p>
+          <div class="team__logos">
+            <div class="team__logos-row">
+              <img src="assets/img/logo-us-ecology.png" alt="US Ecology" style="height: calc(32 * var(--u))">
+              <img src="assets/img/logo-tetra-tech.png" alt="Tetra Tech" style="height: calc(24 * var(--u))">
+              <img src="assets/img/logo-milestone-environmental.png" alt="Milestone Environmental" style="height: calc(30 * var(--u))">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="team__strip">
+        <div class="team__photo"><img src="assets/img/team-rayhan.png" alt="Rayhan Razzak"></div>
+        <div class="team__photo"><img src="assets/img/team-brian.png" alt="Brian Meng"></div>
+        <div class="team__photo"><img src="assets/img/team-numair.png" alt="Numair Razzak"></div>
+        <div class="team__photo"><img src="assets/img/team-jeff.png" alt="Jeff Feeler"></div>
+      </div>
+    </div>
+  </section>
+
 </main>
+
+<!-- FOOTER (Figma 9298:457) — an UNDERFOOTER: it is sticky at the viewport
+     bottom for the whole page, hidden behind the opaque sections, and the
+     team band slides up off it at the end. Background = the hero's own
+     vector pattern at full colour (interactive stir included); the logo
+     forms like the preloader's, copy / CTA / links use the hero grammar. -->
+<footer class="footer" id="footer">
+  <canvas class="footer__pattern" id="footerPattern" aria-hidden="true"></canvas>
+  <div class="footer__content">
+    <div class="footer__logo">
+      <img id="footerLogoImg" src="assets/img/logo.svg" alt="Colmez">
+      <canvas class="footer__logofx" id="footerLogoFx" aria-hidden="true"></canvas>
+    </div>
+
+    <div class="footer__row">
+      <p class="footer__claim"><span class="cw">Powering</span> <span class="cw">next-generation</span><br><span class="cw">hazardous</span> <span class="cw">waste</span> <span class="cw">teams.</span></p>
+      <a class="footer__cta" id="footerCta" href="#"><span class="cta__label">Book a meeting</span><span class="cta__arrow" aria-hidden="true">&rarr;</span></a>
+    </div>
+
+    <div class="footer__bar">
+      <span class="footer__plate" id="footerPlate" aria-hidden="true"></span>
+      <a class="footer__link cw" href="#">LinkedIn</a>
+      <a class="footer__link cw" href="#">Terms and conditions</a>
+      <a class="footer__link cw" href="#">Privacy Policy</a>
+      <span class="footer__link cw">&copy; 2026 Colmez</span>
+      <span class="footer__link cw">Made by tonik</span>
+      <span class="footer__backed">
+        <span class="footer__link cw">Backed by</span>
+        <img class="fr" src="assets/img/logo-a16z-speedrun.svg" alt="a16z Speedrun" width="142" height="20">
+      </span>
+    </div>
+  </div>
+</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/topojson@3/dist/topojson.min.js"></script>
-<script src="main.js"></script>
-<script src="map.js"></script>
+<script src="main.js?v=12"></script>
+<script src="map.js?v=12"></script>
 </body>
 </html>

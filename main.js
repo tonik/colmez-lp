@@ -45,6 +45,19 @@
   const DESIGN_W = 1496, DESIGN_H = 820;
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---------- mobile (<= 767px) ----------
+  // Mobile keeps the desktop's flair (word sweeps, goo asset reveals, the
+  // living pattern, the footer pattern) but NONE of its scroll machinery:
+  // no wheel smoothing, no pinned stages, everything time-driven and
+  // viewport-triggered on the native scroll. The layout comes from the
+  // media query in styles.css; bootMobile() at the bottom wires the rest.
+  // Crossing the breakpoint reloads so the right build boots.
+  const MOBILE_MQ = matchMedia('(max-width: 767px)');
+  const MOBILE = MOBILE_MQ.matches;
+  const mqReload = () => location.reload();
+  if (MOBILE_MQ.addEventListener) MOBILE_MQ.addEventListener('change', mqReload);
+  else if (MOBILE_MQ.addListener) MOBILE_MQ.addListener(mqReload);
+
   // ---------- helpers ----------
   const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const seg = (p, a, b) => clamp01((p - a) / (b - a));
@@ -427,23 +440,34 @@
     patOy = (h - DESIGN_H * patScale) / 2;
   }
 
-  let lastPatKey = '', patLive = false;
+  let lastPatKey = '', patLive = false, bakeTok = -1;
+  // the stir bake is global (design space) — once per frame, whichever
+  // canvas asks for it first
+  function bakeStirOnce(now) { if (bakeTok === now) return; bakeTok = now; bakeStir(now); }
+
   function renderPattern(pd, now, dim) {
     if (!patReady) return;
-    const t = now / 1000;
+    // off-screen the hero pattern is pure cost — the footer runs its own pass
+    const pr = patCanvas.getBoundingClientRect();
+    if (pr.bottom < -50 || pr.top > window.innerHeight + 50) return;
     const live = !REDUCED && pd > 0;
     patLive = live;
     const key = live ? '' : `${pd.toFixed(4)}|${dim.toFixed(3)}`;
     if (key && key === lastPatKey) return;
     lastPatKey = key;
+    paintPattern(pctx, patCanvas.width, patCanvas.height, patScale, patOx, patOy, pd, now, dim, live);
+  }
 
-    const ctx = pctx;
+  // one vector pass over any target canvas — the hero stage and the footer
+  // share the pattern, the stir field and the bake
+  function paintPattern(ctx, cw, ch, sc, ox, oy, pd, now, dim, live) {
+    const t = now / 1000;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = BG_CSS;
-    ctx.fillRect(0, 0, patCanvas.width, patCanvas.height);
+    ctx.fillRect(0, 0, cw, ch);
     if (pd <= 0) return;
 
-    ctx.setTransform(patScale, 0, 0, patScale, patOx, patOy);
+    ctx.setTransform(sc, 0, 0, sc, ox, oy);
     const gold = goldAt(dim); // dim = darker gold, not opacity
     ctx.fillStyle = gold;
     ctx.strokeStyle = gold;
@@ -451,7 +475,7 @@
     ctx.lineJoin = 'round';
 
     const amp = live ? 1 : 0;
-    if (live) bakeStir(now);
+    if (live) bakeStirOnce(now);
 
     // noise dots — tiny bubbles: slow pulse, rare pops, riding the stir field
     let di = 0;
@@ -516,6 +540,17 @@
 
   function onPointerMove(e) {
     if (REDUCED) return;
+    if (fpCanvas && footerExposure() > 0.01) { // the footer owns the stir once it is out
+      const fr = fpCanvas.getBoundingClientRect();
+      const above = footerEl.previousElementSibling;
+      const cover = above ? above.getBoundingClientRect().bottom : -1e9;
+      if (e.clientY > cover && e.clientY >= fr.top && e.clientY <= fr.bottom && fpScale > 0) {
+        ptX = ((e.clientX - fr.left) * patDpr - fpOx) / fpScale;
+        ptY = ((e.clientY - fr.top) * patDpr - fpOy) / fpScale;
+        if (fwX < -1e5) { fwX = ptX; fwY = ptY; }
+        return;
+      }
+    }
     const r = patCanvas.getBoundingClientRect();
     if (r.height === 0) return;
     const cx = (e.clientX - r.left) * patDpr, cy = (e.clientY - r.top) * patDpr;
@@ -846,8 +881,10 @@
   const logoFx = $('logoFx');
   let logoHover = false, lhp = 0, logoFxClear = true;
   let lmxRaw = -1e6, lmyRaw = -1e6, lmx = -1e6, lmy = -1e6;
+  const LOGO_HOVER_DELAY = 180; // ms before the melt starts (client rev)
+  let logoHoverT0 = 0;
 
-  logo.addEventListener('mouseenter', () => { logoHover = true; });
+  logo.addEventListener('mouseenter', () => { logoHover = true; logoHoverT0 = performance.now(); });
   logo.addEventListener('mouseleave', () => { logoHover = false; });
   logo.addEventListener('mousemove', (e) => {
     const r = logoFx.getBoundingClientRect();
@@ -1044,6 +1081,12 @@
         mgl.texImage2D(mgl.TEXTURE_2D, 0, mgl.RGBA, mgl.RGBA, mgl.UNSIGNED_BYTE, c2);
         miniMaskReady = true;
       }
+      if (fgl && footMaskTex && !footMaskReady) {
+        fgl.activeTexture(fgl.TEXTURE1);
+        fgl.bindTexture(fgl.TEXTURE_2D, footMaskTex);
+        fgl.texImage2D(fgl.TEXTURE_2D, 0, fgl.RGBA, fgl.RGBA, fgl.UNSIGNED_BYTE, c2);
+        footMaskReady = true;
+      }
     };
     img.src = 'assets/img/logo.svg';
   }
@@ -1077,7 +1120,8 @@
 
   function renderLogoFx(now) {
     if (!lgl || !logoTexReady || !logoMaskReady) return;
-    const target = logoHover && lastNavT < 0.05 && !REDUCED && lmxRaw > -1e5 ? 1 : 0;
+    const armed = logoHover && now - logoHoverT0 >= LOGO_HOVER_DELAY;
+    const target = armed && lastNavT < 0.05 && !REDUCED && lmxRaw > -1e5 ? 1 : 0;
     lhp += (target - lhp) * (1 - Math.exp(-0.016 * (target > lhp ? 4 : 2.4)));
     if (lhp < 0.004) {
       lhp = 0;
@@ -1099,6 +1143,114 @@
     lgl.clearColor(0, 0, 0, 0);
     lgl.clear(lgl.COLOR_BUFFER_BIT);
     lgl.drawArrays(lgl.TRIANGLES, 0, 6);
+  }
+
+  // ---------- footer (underfooter) ----------
+  // Same three animations as the rest of the page, re-pointed at the footer:
+  // the wordmark forms out of goo like the preloader's, the claim + CTA run
+  // the hero's line-draw grammar, and the background is the hero's own
+  // vector pattern at FULL colour (dim = 1, i.e. before the stage darkens).
+  const footerEl = $('footer');
+  const fpCanvas = $('footerPattern');
+  const fpctx = fpCanvas ? fpCanvas.getContext('2d', { alpha: false }) : null;
+  let fpScale = 1, fpOx = 0, fpOy = 0;
+  let fgl = null, pFoot = null, footMaskTex = null, footMaskReady = false;
+
+  function resizeFooterPattern() {
+    if (!fpCanvas) return;
+    const w = Math.round(fpCanvas.clientWidth * patDpr), h = Math.round(fpCanvas.clientHeight * patDpr);
+    if (!w || !h) return;
+    if (fpCanvas.width !== w || fpCanvas.height !== h) { fpCanvas.width = w; fpCanvas.height = h; }
+    fpScale = Math.max(w / DESIGN_W, h / DESIGN_H);
+    fpOx = (w - DESIGN_W * fpScale) / 2;
+    fpOy = (h - DESIGN_H * fpScale) / 2;
+  }
+
+  // how much of the footer the page has uncovered (0 = fully behind the last
+  // section, 1 = the whole band is out)
+  function footerExposure() {
+    if (!footerEl) return 0;
+    const above = footerEl.previousElementSibling;
+    const b = above ? above.getBoundingClientRect().bottom : 0;
+    return clamp01((window.innerHeight - b) / Math.max(1, footerEl.offsetHeight));
+  }
+
+  function initFooterLogoGL() {
+    const cv = $('footerLogoFx');
+    if (!cv) return false;
+    fgl = cv.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false });
+    if (!fgl) return false;
+    const sh = (type, src) => {
+      const x = fgl.createShader(type);
+      fgl.shaderSource(x, src); fgl.compileShader(x);
+      if (!fgl.getShaderParameter(x, fgl.COMPILE_STATUS)) { console.error(fgl.getShaderInfoLog(x)); return null; }
+      return x;
+    };
+    const vs = sh(fgl.VERTEX_SHADER, VERT), fs = sh(fgl.FRAGMENT_SHADER, FRAG_LOGO_IN);
+    if (!vs || !fs) return false;
+    const prog = fgl.createProgram();
+    fgl.attachShader(prog, vs); fgl.attachShader(prog, fs);
+    fgl.bindAttribLocation(prog, 0, 'aPos');
+    fgl.linkProgram(prog);
+    if (!fgl.getProgramParameter(prog, fgl.LINK_STATUS)) { console.error(fgl.getProgramInfoLog(prog)); return false; }
+    const uni = {};
+    const n = fgl.getProgramParameter(prog, fgl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) {
+      const info = fgl.getActiveUniform(prog, i);
+      uni[info.name.replace('[0]', '')] = fgl.getUniformLocation(prog, info.name);
+    }
+    pFoot = { prog, uni, cv };
+    const buf = fgl.createBuffer();
+    fgl.bindBuffer(fgl.ARRAY_BUFFER, buf);
+    fgl.bufferData(fgl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1]), fgl.STATIC_DRAW);
+    fgl.enableVertexAttribArray(0);
+    fgl.vertexAttribPointer(0, 2, fgl.FLOAT, false, 0, 0);
+    fgl.useProgram(prog);
+    fgl.uniform1i(uni.uMask, 1);
+    fgl.uniform3fv(uni.uGold, GOLD);
+    footMaskTex = fgl.createTexture();
+    fgl.activeTexture(fgl.TEXTURE1);
+    fgl.bindTexture(fgl.TEXTURE_2D, footMaskTex);
+    fgl.texParameteri(fgl.TEXTURE_2D, fgl.TEXTURE_WRAP_S, fgl.CLAMP_TO_EDGE);
+    fgl.texParameteri(fgl.TEXTURE_2D, fgl.TEXTURE_WRAP_T, fgl.CLAMP_TO_EDGE);
+    fgl.texParameteri(fgl.TEXTURE_2D, fgl.TEXTURE_MIN_FILTER, fgl.LINEAR);
+    fgl.texParameteri(fgl.TEXTURE_2D, fgl.TEXTURE_MAG_FILTER, fgl.LINEAR);
+    if (logoMaskCanvas) { fgl.texImage2D(fgl.TEXTURE_2D, 0, fgl.RGBA, fgl.RGBA, fgl.UNSIGNED_BYTE, logoMaskCanvas); footMaskReady = true; }
+    return true;
+  }
+
+  function resizeFooterLogo() {
+    if (!fgl || !pFoot) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const w = Math.round(pFoot.cv.clientWidth * dpr), h = Math.round(pFoot.cv.clientHeight * dpr);
+    if (!w || !h) return;
+    if (pFoot.cv.width !== w || pFoot.cv.height !== h) { pFoot.cv.width = w; pFoot.cv.height = h; }
+    fgl.viewport(0, 0, w, h);
+    fgl.useProgram(pFoot.prog);
+    fgl.uniform2f(pFoot.uni.uRes, w, h);
+  }
+
+  const footLogoImg = $('footerLogoImg');
+  function renderFooterLogoIn(p) {
+    p = clamp01(p);
+    if (REDUCED || !fgl || !pFoot || !footMaskReady) { // fallback: plain fade
+      if (footLogoImg) footLogoImg.style.opacity = easeInOut(p).toFixed(3);
+      return;
+    }
+    if (p >= 1) { // hand over to the crisp <img>
+      if (footLogoImg) footLogoImg.style.opacity = '1';
+      fgl.clearColor(0, 0, 0, 0);
+      fgl.clear(fgl.COLOR_BUFFER_BIT);
+      return;
+    }
+    if (footLogoImg) footLogoImg.style.opacity = '0';
+    fgl.useProgram(pFoot.prog);
+    fgl.activeTexture(fgl.TEXTURE1);
+    fgl.bindTexture(fgl.TEXTURE_2D, footMaskTex);
+    fgl.uniform1f(pFoot.uni.uP, easeInOut(p));
+    fgl.clearColor(0, 0, 0, 0);
+    fgl.clear(fgl.COLOR_BUFFER_BIT);
+    fgl.drawArrays(fgl.TRIANGLES, 0, 6);
   }
 
   // ---------- nav hand-over goo (logo + CTA) ----------
@@ -1321,6 +1473,8 @@
     uniform float uP;
     uniform vec3 uGold;
     uniform vec3 uCover;
+    uniform sampler2D uTex;
+    uniform float uUseTex;
     ${GLSL_NOISE}
     void main(){
       float sa = uRes.x / uRes.y;
@@ -1339,7 +1493,15 @@
       float rim = smoothstep(0.74, 1.0, e) * (1.0 - smoothstep(1.0, 1.2, e));
       float a = max(1.0 - vis, rim * 0.85);
       if (a <= 0.002) { gl_FragColor = vec4(0.0); return; }
-      vec3 col = mix(uCover, uGold, clamp(rim * 0.9, 0.0, 1.0));
+      vec3 cov = uCover;
+      if (uUseTex > 0.5) {
+        // washed take on the photo itself: grey, lifted, low contrast — the
+        // goo holes then reveal the original underneath (team carousel)
+        vec3 tc = texture2D(uTex, vUv).rgb;
+        float lu = dot(tc, vec3(0.299, 0.587, 0.114));
+        cov = mix(vec3(lu), vec3(0.78), 0.55);
+      }
+      vec3 col = mix(cov, uGold, clamp(rim * 0.9, 0.0, 1.0));
       gl_FragColor = vec4(col * a, a);
     }`;
 
@@ -1375,6 +1537,11 @@
     igl.vertexAttribPointer(0, 2, igl.FLOAT, false, 0, 0);
     igl.useProgram(prog);
     igl.uniform3fv(uni.uGold, GOLD);
+    igl.uniform1i(uni.uTex, 0);
+    const wt = igl.createTexture();
+    igl.bindTexture(igl.TEXTURE_2D, wt);
+    igl.texImage2D(igl.TEXTURE_2D, 0, igl.RGB, 1, 1, 0, igl.RGB, igl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255]));
+    pImg.white = wt;
   }
 
   const igMedia = new Map(); // mediaEl -> { cv, g, p }
@@ -1406,6 +1573,8 @@
     if (igCv.width !== rw || igCv.height !== rh) { igCv.width = rw; igCv.height = rh; }
     igl.viewport(0, 0, rw, rh);
     igl.useProgram(pImg.prog);
+    igl.bindTexture(igl.TEXTURE_2D, pImg.white);
+    igl.uniform1f(pImg.uni.uUseTex, 0);
     igl.uniform2f(pImg.uni.uRes, rw, rh);
     igl.uniform1f(pImg.uni.uP, easeInOut(p));
     igl.uniform3fv(pImg.uni.uCover, coverVec);
@@ -1415,9 +1584,116 @@
     st.g.clearRect(0, 0, rw, rh);
     st.g.drawImage(igCv, 0, 0);
   }
+
+  // photo-cover variant: the eroding cover is the photo itself, washed grey
+  // in-shader; the holes reveal the untouched image underneath. Own overlay
+  // (.ggoo--wash) UNDER the entry cover, own texture per media.
+  const igMedia2 = new Map();
+  function imgGooTexSet(media, img, p) {
+    p = clamp01(p);
+    if (!igl && !igFail) initImgGoo();
+    if (igFail) { // no WebGL: plain CSS wash toggle
+      media.style.filter = p >= 0.5 ? '' : 'grayscale(1) contrast(0.6) brightness(1.3)';
+      return;
+    }
+    let st = igMedia2.get(media);
+    if (!st) {
+      const cv = document.createElement('canvas');
+      cv.className = 'ggoo ggoo--wash';
+      cv.setAttribute('aria-hidden', 'true');
+      media.appendChild(cv);
+      st = { cv, g: cv.getContext('2d'), p: -1, tex: null, key: '' };
+      igMedia2.set(media, st);
+    }
+    if (p === st.p) return;
+    st.p = p;
+    const w = media.clientWidth, h = media.clientHeight;
+    if (!w || !h) { st.p = -1; return; }
+    const rw = Math.min(720, Math.round(w)), rh = Math.max(2, Math.round(rw * h / w));
+    if (st.cv.width !== rw || st.cv.height !== rh) { st.cv.width = rw; st.cv.height = rh; }
+    if (p >= 1) { st.g.clearRect(0, 0, rw, rh); return; }
+    if (!img.complete || !img.naturalWidth) { st.p = -1; return; }
+    const key = rw + 'x' + rh + '|' + (img.currentSrc || img.src);
+    if (st.key !== key) { // cover-crop the photo into the texture (centre-top)
+      const tc = document.createElement('canvas');
+      tc.width = rw; tc.height = rh;
+      const sc = Math.max(rw / img.naturalWidth, rh / img.naturalHeight);
+      tc.getContext('2d').drawImage(img, (rw - img.naturalWidth * sc) / 2, 0, img.naturalWidth * sc, img.naturalHeight * sc);
+      if (!st.tex) st.tex = igl.createTexture();
+      igl.bindTexture(igl.TEXTURE_2D, st.tex);
+      igl.texParameteri(igl.TEXTURE_2D, igl.TEXTURE_WRAP_S, igl.CLAMP_TO_EDGE);
+      igl.texParameteri(igl.TEXTURE_2D, igl.TEXTURE_WRAP_T, igl.CLAMP_TO_EDGE);
+      igl.texParameteri(igl.TEXTURE_2D, igl.TEXTURE_MIN_FILTER, igl.LINEAR);
+      igl.texParameteri(igl.TEXTURE_2D, igl.TEXTURE_MAG_FILTER, igl.LINEAR);
+      igl.texImage2D(igl.TEXTURE_2D, 0, igl.RGB, igl.RGB, igl.UNSIGNED_BYTE, tc);
+      st.key = key;
+    }
+    if (igCv.width !== rw || igCv.height !== rh) { igCv.width = rw; igCv.height = rh; }
+    igl.viewport(0, 0, rw, rh);
+    igl.useProgram(pImg.prog);
+    igl.bindTexture(igl.TEXTURE_2D, st.tex);
+    igl.uniform1f(pImg.uni.uUseTex, 1);
+    igl.uniform2f(pImg.uni.uRes, rw, rh);
+    igl.uniform1f(pImg.uni.uP, easeInOut(p));
+    igl.uniform3fv(pImg.uni.uCover, COVER_EB.vec);
+    igl.clearColor(0, 0, 0, 0);
+    igl.clear(igl.COLOR_BUFFER_BIT);
+    igl.drawArrays(igl.TRIANGLES, 0, 6);
+    st.g.clearRect(0, 0, rw, rh);
+    st.g.drawImage(igCv, 0, 0);
+  }
   const COVER_BLACK = { css: '#121212', vec: [0x12 / 255, 0x12 / 255, 0x12 / 255] };
   const COVER_GREY = { css: '#313131', vec: [0x31 / 255, 0x31 / 255, 0x31 / 255] };
   const COVER_WHITE = { css: '#ffffff', vec: [1, 1, 1] };
+  const COVER_EB = { css: '#ebebeb', vec: [0xeb / 255, 0xeb / 255, 0xeb / 255] };
+
+  // ---------- asset reveals (client rev) ----------
+  // Photos and product shots used to ride their section's scroll progress,
+  // which on a fast scroll played the whole goo reveal in a blink. Each media
+  // now starts a TIME-driven reveal the first time it enters the viewport.
+  const REVEAL_MS = 1800; // one calm goo reveal, start to finish
+  const RVL = [];
+  const rvlObs = ('IntersectionObserver' in window) ? new IntersectionObserver((ents) => {
+    for (const e of ents) {
+      if (!e.isIntersecting) continue;
+      const st = RVL.find((r) => r.el === e.target);
+      rvlObs.unobserve(e.target);
+      if (!st || st.t0 >= 0) continue;
+      // a group forms as one image: the first member to show starts them all
+      for (const r of RVL) if (r === st || (st.group && r.group === st.group)) {
+        if (r.t0 < 0) { r.t0 = performance.now() + r.delay; if (r !== st) rvlObs.unobserve(r.el); }
+      }
+    }
+  }, { rootMargin: '0px 0px -12% 0px', threshold: 0.01 }) : null;
+
+  function addReveal(el, cover, dur, delay, group) {
+    if (!el) return;
+    const st = { el, cover, dur: dur || REVEAL_MS, delay: delay || 0, t0: -1, p: -1, group: group || '' };
+    RVL.push(st);
+    if (REDUCED || !rvlObs) { st.t0 = 0; return; }
+    rvlObs.observe(el);
+  }
+
+  function updateReveals(ts) {
+    for (const r of RVL) {
+      if (r.p >= 1) continue;
+      const p = r.t0 < 0 ? 0 : (REDUCED ? 1 : clamp01((ts - r.t0) / r.dur));
+      if (p === r.p) continue;
+      r.p = p;
+      imgGooSet(r.el, p, r.cover.css, r.cover.vec);
+    }
+  }
+
+  // whole-paragraph reveal — long copy comes in as ONE block (client rev:
+  // word-by-word on a big paragraph made too much happen at once)
+  const BLK_IN = 0.16;
+  function revealBlock(el, p, rs, travel, mul) {
+    if (!el) return;
+    const tr = easeOut(seg(p, rs, rs + BLK_IN));
+    const st = el.style;
+    st.opacity = (tr * (mul === undefined ? 1 : mul)).toFixed(3);
+    st.transform = tr >= 1 ? '' : `translate3d(0, ${((1 - tr) * travel).toFixed(1)}px, 0)`;
+  }
 
   // ---------- crisis section (pinned accordion) ----------
   // E: entry — section top rides viewport-bottom → pin engage; every word
@@ -1432,14 +1708,10 @@
   const cMedias = cItems.map((it) => it.querySelector('.crisis-item__media'));
 
   const CE_RISE = 0.08, CE_LAG = 0.02, CE_FILL = 0.10; // entry windows, in E
-  const CA_RISE = 0.05, CA_LAG = 0.02, CA_FILL = 0.07; // activation windows, in C
 
   // entry cascade (in E): the section headline first, around mid-viewport;
   // then each box in order — box heading (number + title), photo, subhead
   const BOX_S = [0.58, 0.68, 0.78];
-  // photo reveal windows — stretched (client: fast scroll made the goo pop;
-  // capped at E=1 so the last box still completes before the pin engages)
-  const IM_W = BOX_S.map((s) => [s + 0.02, Math.min(1, s + 0.34)]);
   const cEntry = [];
   const addWords = (els, start, spread, seed) => els.forEach((el, i) =>
     cEntry.push({ el, rs: start + (i / els.length) * spread + hash01(i + seed) * 0.012 }));
@@ -1447,12 +1719,7 @@
   cItems.forEach((it, bi) => {
     addWords([...it.querySelectorAll('.crisis-item__num .cw, .crisis-item__title .cw')], BOX_S[bi], 0.03, 320 + bi * 40);
   });
-  addWords([...cDescs[0].querySelectorAll('.cw')], BOX_S[0] + 0.10, 0.10, 360);
-
-  const actWords = (desc, start, h0) => [...desc.querySelectorAll('.cw')]
-    .map((el, i, a) => ({ el, rs: start + (i / a.length) * 0.13 + hash01(i + h0) * 0.015 }));
-  const cAct1 = actWords(cDescs[1], 0.18, 400);
-  const cAct2 = actWords(cDescs[2], 0.68, 450);
+  cMedias.forEach((m) => addReveal(m, COVER_BLACK, 0, 0, 'crisis')); // the three form as one (client rev)
 
   function sweepWord(m, p, rise, lag, fill, travel) {
     const tr = easeOut(seg(p, m.rs, m.rs + rise));
@@ -1470,12 +1737,11 @@
     const travel = 38 * u();
 
     for (const m of cEntry) sweepWord(m, E, CE_RISE, CE_LAG, CE_FILL, travel);
-    for (const m of cAct1) sweepWord(m, C, CA_RISE, CA_LAG, CA_FILL, travel);
-    for (const m of cAct2) sweepWord(m, C, CA_RISE, CA_LAG, CA_FILL, travel);
 
-    // photos form out of goo (preloader-logo reveal, black cover)
-    for (let i = 0; i < 3; i++)
-      imgGooSet(cMedias[i], seg(E, IM_W[i][0], IM_W[i][1]), COVER_BLACK.css, COVER_BLACK.vec);
+    // body copy reveals whole; 001 also fades out as the accordion hands over
+    revealBlock(cDescs[0], E, BOX_S[0] + 0.10, travel, 1 - seg(C, 0.06, 0.22));
+    revealBlock(cDescs[1], C, 0.18, travel, 1 - seg(C, 0.56, 0.72));
+    revealBlock(cDescs[2], C, 0.68, travel);
 
     const a = easeInOut(seg(C, 0.06, 0.44)); // 001 → 002
     const b = easeInOut(seg(C, 0.56, 0.94)); // 002 → 003
@@ -1485,8 +1751,6 @@
     cItems[0].style.setProperty('--chw', lerp(100, 26, a).toFixed(1));
     cItems[1].style.setProperty('--chw', lerp(lerp(26, 100, a), 26, b).toFixed(1));
     cItems[2].style.setProperty('--chw', lerp(26, 100, b).toFixed(1));
-    cDescs[0].style.opacity = (1 - seg(C, 0.06, 0.22)).toFixed(3);
-    cDescs[1].style.opacity = (1 - seg(C, 0.56, 0.72)).toFixed(3);
   }
 
   const CR = { E: 0, C: 0 };
@@ -1532,10 +1796,9 @@
 
   const quoteSec = $('quote');
   const quoteMedia = quoteSec ? quoteSec.querySelector('.quote__media') : null;
-  const qWords = quoteSec
-    ? [...wordsIn(quoteSec, '.quote__text .cw', 0.32, 0.14, 700),
-       ...wordsIn(quoteSec, '.quote__name .cw', 0.56, 0.03, 730)]
-    : [];
+  const quoteText = quoteSec ? quoteSec.querySelector('.quote__text') : null;
+  const qWords = quoteSec ? wordsIn(quoteSec, '.quote__name .cw', 0.56, 0.03, 730) : [];
+  addReveal(quoteMedia, COVER_GREY, 0, 700); // the quote reads first, then Jeff forms
   const qFr = quoteSec
     ? [...quoteSec.querySelectorAll('.fr')].map((el, i) => ({ el, rs: 0.60 + i * 0.04 }))
     : [];
@@ -1550,6 +1813,7 @@
         fr: [...it.querySelectorAll('.fr')].map((el, i) => ({ el, rs: 0.40 + i * 0.045 })),
       }))
     : [];
+  sItems.forEach((s) => addReveal(s.media, COVER_WHITE));
 
   function fadeRise(m, p, travel) {
     const tr = easeOut(seg(p, m.rs, m.rs + 0.10));
@@ -1565,7 +1829,120 @@
     return clamp01((vh - el.getBoundingClientRect().top) / (vh * 1.05));
   }
 
-  let qS = null, shS = null;
+  // security + team ride the same per-section entry drive
+  const securitySec = $('security');
+  const secWords = securitySec ? wordsIn(securitySec, '.cw', 0.35, 0.10, 900) : [];
+  const secFr = securitySec ? [...securitySec.querySelectorAll('.fr')].map((el, i) => ({ el, rs: 0.52 + i * 0.05 })) : [];
+  const teamSec = $('team');
+  const teamWords = teamSec
+    ? [...wordsIn(teamSec, '.team__head .cw', 0.30, 0.10, 950),
+       ...wordsIn(teamSec, '.team__list .is-active .team__name .cw', 0.46, 0.04, 970)]
+    : [];
+  const teamFr = teamSec ? [...teamSec.querySelectorAll('.fr')].map((el, i) => ({ el, rs: 0.48 + i * 0.04 })) : [];
+  const teamPhotos = teamSec ? [...teamSec.querySelectorAll('.team__photo')].map((el) => ({ el })) : [];
+
+  // ---------- team member carousel (pinned) ----------
+  // T = pinned progress over --team-track; three eased hand-over windows sum
+  // into a continuous active index `act` (0..3). Per member: the portrait
+  // grows 285x343.5 <-> 380x458, the strip re-centres the active portrait at
+  // 599u, the list entry brightens 0.2 <-> 1, and the bios crossfade (both
+  // sides dip to 0 around a hand-over midpoint, so texts never overlap).
+  const teamPin = teamSec ? teamSec.querySelector('.team__pin') : null;
+  const TEAM = teamSec ? {
+    lis: [...teamSec.querySelectorAll('.team__list li')],
+    chips: [...teamSec.querySelectorAll('.team__list .team__chip')],
+    bios: [...teamSec.querySelectorAll('.team__bio-item')],
+    strip: teamSec.querySelector('.team__strip'),
+    list: teamSec.querySelector('.team__list'),
+    head: teamSec.querySelector('.team__head'),
+    imgs: [...teamSec.querySelectorAll('.team__photo img')],
+  } : null;
+  const TW_WIN = [[0.06, 0.30], [0.38, 0.62], [0.70, 0.94]];
+
+  // click a name -> smooth-scroll the pin to that member's plateau (the
+  // native smooth scroll is picked up as an external scroll and resynced)
+  const TEAM_T = [0.02, 0.34, 0.66, 0.98];
+  if (TEAM) TEAM.lis.forEach((li, i) => li.addEventListener('click', () => {
+    const pinH = teamPin.offsetHeight;
+    const Ts = teamStickyTop();
+    const y = teamSec.offsetTop - Ts + TEAM_T[i] * (teamSec.offsetHeight - pinH);
+    window.scrollTo({ top: y, behavior: 'smooth' });
+  }));
+
+  function teamT() {
+    if (!teamPin) return 0;
+    const pinH = teamPin.offsetHeight;
+    const top = teamSec.getBoundingClientRect().top;
+    return clamp01((teamStickyTop() - top) / Math.max(1, teamSec.offsetHeight - pinH));
+  }
+
+  // sticky top of the band — mirrors the CSS: centred in the viewport, but
+  // never so high that the heading (150u down) slides under the fixed nav
+  function teamStickyTop() {
+    if (!teamPin) return 0;
+    const k = u();
+    return Math.max(64 - 150 * k, (window.innerHeight - teamPin.offsetHeight) / 2);
+  }
+
+  const washW = [0, 0, 0, 0]; // photo wash/reveal weights — time-paced, not scrubbed
+  function updateTeamCarousel(T, dt) {
+    if (!TEAM) return;
+    const k = u();
+
+    let act = 0;
+    for (const w of TW_WIN) act += easeInOut(seg(T, w[0], w[1]));
+    const n = teamPhotos.length;
+    // the active photo's reveal runs on its OWN clock: a fast scrub used to
+    // play the whole wash->original in a blink (client rev)
+    const ai = Math.max(0, Math.min(n - 1, Math.round(act)));
+    const kRise = dt ? 1 - Math.exp(-dt * 1.8) : 1;  // reveal: calm
+    const kFall = dt ? 1 - Math.exp(-dt * 5.0) : 1;  // wash-out: quick, it must not linger
+    const hs = [];
+    for (let i = 0; i < n; i++) {
+      const wgt = clamp01(1 - Math.abs(act - i));
+      const ph = lerp(343.5, 458, wgt) * k;
+      const st = teamPhotos[i].el.style;
+      st.width = (lerp(285, 380, wgt) * k).toFixed(2) + 'px';
+      st.height = ph.toFixed(2) + 'px';
+      hs.push(ph);
+      if (TEAM.lis[i]) TEAM.lis[i].style.opacity = lerp(0.2, 1, wgt).toFixed(3);
+      // active badge takes the CTA gold (grey-200 -> gold-500)
+      if (TEAM.chips[i]) TEAM.chips[i].style.background =
+        'rgb(' + Math.round(lerp(115, 174, wgt)) + ',' + Math.round(lerp(115, 154, wgt)) + ',' + Math.round(lerp(115, 41, wgt)) + ')';
+      // inactive portraits sit under a washed-grey take of themselves; the
+      // activation opens goo holes onto the original
+      const tgt = i === ai ? 1 : 0;
+      washW[i] += (tgt - washW[i]) * (tgt < washW[i] ? kFall : kRise);
+      // leaving a plateau the wash never trails the scrub (client: the
+      // active->inactive change landed too late and pulled the eye back)
+      if (i !== ai) washW[i] = Math.min(washW[i], wgt * 1.15);
+      if (Math.abs(washW[i] - tgt) < 0.002) washW[i] = tgt;
+      if (TEAM.imgs[i]) imgGooTexSet(teamPhotos[i].el, TEAM.imgs[i], washW[i]);
+      if (TEAM.bios[i]) {
+        const op = seg(wgt, 0.5, 0.95);
+        const bs = TEAM.bios[i].style;
+        bs.opacity = op.toFixed(3);
+        bs.visibility = op <= 0 ? 'hidden' : 'visible';
+      }
+    }
+    const gap = 20 * k;
+    const centers = [];
+    let y = 0;
+    for (let i = 0; i < n; i++) { centers.push(y + hs[i] / 2); y += hs[i] + gap; }
+    const i0 = Math.min(n - 1, Math.floor(act)), i1 = Math.min(n - 1, i0 + 1);
+    const cAct = lerp(centers[i0], centers[i1], act - i0);
+    TEAM.strip.style.transform = 'translate(-50%, ' + (599 * k - cAct).toFixed(2) + 'px)';
+    // the names ride along: the active one stays on the portrait's centre line
+    if (TEAM.list) {
+      const nc = TEAM.lis.map((li) => li.offsetTop + li.offsetHeight / 2);
+      // …but never far enough to climb into the heading (client rev)
+      const headBot = TEAM.head ? TEAM.head.offsetTop + TEAM.head.offsetHeight : 0;
+      const up = Math.min(lerp(nc[i0], nc[i1], act - i0), Math.max(0, TEAM.list.offsetTop - headBot - 32 * k));
+      TEAM.list.style.transform = 'translateY(' + (-up).toFixed(2) + 'px)';
+    }
+  }
+
+  let qS = null, shS = null, seS = null, teS = null, teTs = null;
   const siS = [null, null, null];
   let lastQSKey = '';
   function updateQuoteScreens(dt, snap) {
@@ -1579,22 +1956,116 @@
       shS = sm(shS, sectionE(screensSec));
       sItems.forEach((s, i) => { siS[i] = sm(siS[i], sectionE(s.el)); });
     }
-    const key = [qS, shS, ...siS].map((v) => (v === null ? 'x' : v.toFixed(4))).join('|');
+    if (securitySec) seS = sm(seS, sectionE(securitySec));
+    if (teamSec) { teS = sm(teS, sectionE(teamSec)); teTs = sm(teTs, teamT()); }
+    updateTeamCarousel(teTs, dt); // own clock for the wash — runs past the key gate
+    const key = [qS, shS, seS, teS, teTs, ...siS].map((v) => (v === null ? 'x' : v.toFixed(4))).join('|');
     if (key === lastQSKey) return;
     lastQSKey = key;
     const travel = 38 * u();
     if (quoteSec) {
       for (const m of qWords) sweepWord(m, qS, CE_RISE, CE_LAG, CE_FILL, travel);
       for (const m of qFr) fadeRise(m, qS, travel);
-      imgGooSet(quoteMedia, seg(qS, 0.20, 0.75), COVER_GREY.css, COVER_GREY.vec);
+      revealBlock(quoteText, qS, 0.30, travel);
     }
     for (const m of sHeadWords) sweepWord(m, shS, CE_RISE, CE_LAG, CE_FILL, travel);
     sItems.forEach((s, i) => {
       const E = siS[i];
       for (const m of s.words) sweepWord(m, E, CE_RISE, CE_LAG, CE_FILL, travel);
       for (const m of s.fr) fadeRise(m, E, travel);
-      imgGooSet(s.media, seg(E, 0.28, 0.80), COVER_WHITE.css, COVER_WHITE.vec);
     });
+    for (const m of secWords) sweepWord(m, seS, CE_RISE, CE_LAG, CE_FILL, travel);
+    for (const m of secFr) fadeRise(m, seS, travel);
+    for (const m of teamWords) sweepWord(m, teS, CE_RISE, CE_LAG, CE_FILL, travel);
+    for (const m of teamFr) fadeRise(m, teS, travel);
+  }
+
+  // ---------- footer choreography ----------
+  // One time-driven run, started the moment the underfooter is a third out:
+  //   0.00-1.40  wordmark forms out of goo (the preloader's reveal)
+  //   1.05       claim words sweep in (hero grammar)
+  //   1.35/1.95  CTA draws its 2px line, then grows up; label last
+  //   1.90/2.50  link plate draws and grows the same way; links sweep on top
+  const fClaimWords = footerEl
+    ? [...footerEl.querySelectorAll('.footer__claim .cw')].map((el, i, a) =>
+        ({ el, rs: 0.10 + (i / a.length) * 0.20 + hash01(i + 980) * 0.04 }))
+    : [];
+  const fBarWords = footerEl
+    ? [...footerEl.querySelectorAll('.footer__bar .cw')].map((el, i, a) =>
+        ({ el, rs: 0.30 + (i / a.length) * 0.18 + hash01(i + 1010) * 0.03 }))
+    : [];
+  const fBarFr = footerEl ? [...footerEl.querySelectorAll('.footer__bar .fr')].map((el, i) => ({ el, rs: 0.50 + i * 0.04 })) : [];
+  const fCta = $('footerCta');
+  const fPlate = $('footerPlate');
+  const fBar = footerEl ? footerEl.querySelector('.footer__bar') : null;
+  const FT = { t0: 0, done: false };
+  const FT_END = 1.60;
+  const FT_CTA = 0.06, FT_PLATE = 0.12; // everything lands together (client rev)
+
+  function footerFrame(t) {
+    const k = u(), travel = 38 * k;
+    renderFooterLogoIn(seg(t, 0, 0.95));
+    for (const m of fClaimWords) sweepWord(m, t, 0.28, 0.08, 0.30, travel);
+    for (const m of fBarWords) sweepWord(m, t, 0.28, 0.08, 0.30, travel);
+    for (const m of fBarFr) fadeRise(m, t, travel);
+    if (fCta) { // 2px line draws across, then the block grows up from it
+      const lw = easeOut(seg(t, FT_CTA, FT_CTA + 0.40));
+      const lh = easeOut(seg(t, FT_CTA + 0.40, FT_CTA + 0.85));
+      const h = Math.max(2, 100 * k * lh);
+      fCta.style.width = (339 * k * lw).toFixed(2) + 'px';
+      fCta.style.height = h.toFixed(2) + 'px';
+      fCta.style.padding = `0 ${(12 * k * lh).toFixed(2)}px ${(8 * k * lh).toFixed(2)}px`;
+      fCta.style.opacity = lw > 0 ? '1' : '0';
+      const ct = seg(t, FT_CTA + 0.78, FT_CTA + 1.00);
+      for (const sp of fCta.children) sp.style.opacity = ct.toFixed(3);
+    }
+    if (fPlate && fBar) { // the links' plate arrives the same way as the button
+      const pw = easeOut(seg(t, FT_PLATE, FT_PLATE + 0.40));
+      const ph = easeOut(seg(t, FT_PLATE + 0.40, FT_PLATE + 0.85));
+      fPlate.style.width = (pw * 100).toFixed(2) + '%';
+      fPlate.style.height = Math.max(2, fBar.offsetHeight * ph).toFixed(2) + 'px';
+    }
+  }
+
+  function footerRest() {
+    renderFooterLogoIn(1);
+    for (const m of [...fClaimWords, ...fBarWords]) sweepWord(m, 99, 0.35, 0.12, 0.45, 0);
+    for (const m of fBarFr) fadeRise(m, 99, 0);
+    if (fCta) { fCta.style.cssText = ''; for (const sp of fCta.children) sp.style.opacity = '1'; }
+    if (fPlate) { fPlate.style.width = '100%'; fPlate.style.height = '100%'; }
+  }
+
+  const navBars = [...document.querySelectorAll('.nav')];
+  let lastNavHide = -1;
+  function hideNavForFooter(ex) {
+    // past 60% uncovered the footer carries the logo and the CTA itself
+    const h = easeInOut(clamp01((ex - 0.60) / 0.22));
+    if (h === lastNavHide) return;
+    lastNavHide = h;
+    for (const n of navBars) {
+      n.style.opacity = (1 - h).toFixed(3);
+      n.style.visibility = h >= 1 ? 'hidden' : '';
+    }
+  }
+
+  function updateFooter(ts) {
+    if (!footerEl) return;
+    const ex = footerExposure();
+    hideNavForFooter(ex);
+    if (ex <= 0.002 && !FT.t0) return;
+    if (patReady) { // the hero's pattern, full colour, stir and all
+      if (!fpCanvas.width) resizeFooterPattern();
+      paintPattern(fpctx, fpCanvas.width, fpCanvas.height, fpScale, fpOx, fpOy, 1, ts, 1, !REDUCED);
+    }
+    if (FT.done) return;
+    if (!FT.t0) {
+      if (ex < 0.33) return;
+      if (REDUCED) { footerRest(); FT.done = true; return; }
+      FT.t0 = ts;
+    }
+    const t = (ts - FT.t0) / 1000;
+    footerFrame(t);
+    if (t >= FT_END) { footerRest(); FT.done = true; }
   }
 
   // the map ride itself is scroll-driven (reversible), anchored to the band
@@ -1810,7 +2281,7 @@
   let sTarget = 0, sCur = 0, sInit = false;
 
   window.addEventListener('wheel', (e) => {
-    if (REDUCED || e.ctrlKey) return; // pinch-zoom stays native
+    if (MOBILE || REDUCED || e.ctrlKey) return; // mobile scroll stays native; pinch-zoom stays native
     e.preventDefault();
     if (PRE.active) return; // scroll held during the preloader
     if (!sInit) { sTarget = sCur = window.scrollY; sInit = true; }
@@ -1862,16 +2333,329 @@
     updateCrisis(Es, Cs);
     updateMap(Ms);
     updateQuoteScreens(dt, wheelDriving);
+    updateReveals(ts);
+    updateFooter(ts);
     if (window.colmezMap) window.colmezMap.set(As);
     requestAnimationFrame(loop);
   }
 
+  // ---------- mobile build ----------
+  // Keeps the desktop flair without its scroll machinery: word sweeps, block
+  // and fade-rise reveals and the CTA line-draw are TIME-driven, fired by an
+  // IntersectionObserver on the native scroll; the goo asset reveals reuse
+  // addReveal/updateReveals verbatim; the vector pattern lives behind the
+  // waste list (moved there at boot) and the footer paints it full colour —
+  // both with the morph, the stir and the bake, exactly the desktop field.
+
+  const MDUR = { w: 700, fr: 620, blk: 900, cta: 1100 };
+  const mGroups = [];
+
+  function mFinish(it) {
+    const st = it.el.style;
+    if (it.type === 'cta') {
+      st.clipPath = '';
+      [...it.el.children].forEach((c) => { c.style.opacity = ''; });
+    } else {
+      st.opacity = '1';
+      st.transform = '';
+      if (it.type === 'w') st.setProperty('--fill', '124%');
+      if (it.sup) it.sup.textContent = String(it.tgt).padStart(3, '0');
+    }
+    it.done = true;
+  }
+
+  function mInit(it) {
+    const st = it.el.style;
+    if (REDUCED) { mFinish(it); return; }
+    if (it.type === 'cta') {
+      st.clipPath = 'inset(calc(100% - 2px) 100% 0 0)';
+      [...it.el.children].forEach((c) => { c.style.opacity = '0'; });
+    } else {
+      st.opacity = '0';
+      if (it.type === 'w') st.setProperty('--fill', it.fillFrom + '%');
+    }
+  }
+
+  // defs: [{ els, type, delay, stag, dur }] — one group fires as a unit
+  function mGroup(container, defs) {
+    const items = [];
+    defs.forEach((d) => {
+      [...d.els].forEach((el, i) => {
+        const it = {
+          el,
+          type: d.type,
+          delay: (d.delay || 0) + i * (d.stag === undefined ? 60 : d.stag),
+          dur: d.dur || MDUR[d.type],
+          fillFrom: el.classList.contains('hw') ? -40 : -24,
+          sup: null, tgt: 0,
+          done: false,
+        };
+        const sup = d.type === 'w' ? el.querySelector('sup[data-n]') : null;
+        if (sup) { it.sup = sup; it.tgt = parseInt(sup.dataset.n, 10) || 0; }
+        mInit(it);
+        items.push(it);
+      });
+    });
+    const g = { container, items, t0: -1 };
+    mGroups.push(g);
+    return g;
+  }
+
+  const mObs = ('IntersectionObserver' in window) ? new IntersectionObserver((ents) => {
+    for (const e of ents) {
+      if (!e.isIntersecting) continue;
+      mObs.unobserve(e.target);
+      for (const g of mGroups) if (g.container === e.target && g.t0 < 0) g.t0 = performance.now();
+    }
+  }, { rootMargin: '0px 0px -10% 0px', threshold: 0.01 }) : null;
+
+  function runWordAnims(ts) {
+    for (const g of mGroups) {
+      if (g.t0 < 0) continue;
+      for (const it of g.items) {
+        if (it.done) continue;
+        const p = clamp01((ts - g.t0 - it.delay) / it.dur);
+        if (p <= 0) continue;
+        if (p >= 1) { mFinish(it); continue; }
+        const st = it.el.style;
+        if (it.type === 'cta') {
+          const lw = seg(p, 0, 0.5), lh = easeOut(seg(p, 0.4, 1));
+          st.clipPath = `inset(calc(${((1 - lh) * 100).toFixed(2)}% - 2px) ${((1 - lw) * 100).toFixed(2)}% 0 0)`;
+          const lo = seg(p, 0.72, 1);
+          [...it.el.children].forEach((c) => { c.style.opacity = lo.toFixed(3); });
+        } else {
+          const e = easeOut(p);
+          st.opacity = e.toFixed(3);
+          st.transform = `translate3d(0, ${((1 - e) * (it.type === 'blk' ? 20 : 14)).toFixed(1)}px, 0)`;
+          if (it.type === 'w') st.setProperty('--fill', lerp(it.fillFrom, 124, easeInOut(p)).toFixed(1) + '%');
+          if (it.sup) it.sup.textContent = String(Math.round(it.tgt * easeOut(p))).padStart(3, '0');
+        }
+      }
+    }
+  }
+
+  let mFooterT0 = -1;
+
+  // hero photo -> pattern hand-over, scroll-driven and reversible (native
+  // scroll, the photo box is a sticky background): p rides the waste LIST
+  // scrolling in over the box — photo dissolves and the pattern draws in
+  // before the words arrive, then the pattern dims under them, desktop-style.
+  function heroDissolveP() {
+    const r = list.getBoundingClientRect();
+    if (!r.height) return 0;
+    const vh = window.innerHeight;
+    return clamp01((vh - r.top) / (vh * 0.85));
+  }
+
+  function bootMobile() {
+    // the desktop groups its crisis photos to form as ONE image (they sit
+    // side by side there) — stacked vertically on mobile, each should form
+    // when IT shows, so the module-level registrations lose their group
+    for (const r of RVL) r.group = '';
+
+    // the desktop's forced line breaks are meaningless on the narrow column
+    // and there is no whitespace around them in the markup — swap each for a
+    // real space so the words don't fuse (the breakpoint change reloads, so
+    // the desktop never sees this DOM)
+    document.querySelectorAll(
+      '.mhero__headline br, .waste br, .crisis__head br, .map__lead br, ' +
+      '.screens__head br, .screen-item__title br, .team__head br, .footer__claim br'
+    ).forEach((br) => br.replaceWith(' '));
+
+    // hero photo -> pattern: the desktop's own dissolve. The photo layer
+    // stays in flow (mobile CSS) with the pattern canvas underneath and the
+    // WebGL goo on top; mobileLoop drives both from the box's scroll position.
+    if (!initGL()) photoLayer.classList.remove('has-gl');
+
+    // compact nav slides in once the photo box reaches the viewport top —
+    // i.e. the sticky hero (and its big wordmark) is fully covered; a plain
+    // 0.5vh threshold overlapped the blend-difference mini onto the big logo
+    const onScr = () => document.body.classList.toggle('mnav', window.scrollY >= photoLayer.offsetTop - 1);
+    window.addEventListener('scroll', onScr, { passive: true });
+    onScr();
+
+    // team: horizontal swipe carousel built from the desktop pieces
+    const teamPinEl = document.querySelector('.team__pin');
+    const mcardPhotos = [];
+    if (teamPinEl) {
+      const lis = [...document.querySelectorAll('.team__list li')];
+      const bios = [...document.querySelectorAll('.team__bio .team__bio-item')];
+      const photos = [...document.querySelectorAll('.team__photo img')];
+      const car = document.createElement('div');
+      car.className = 'team__mcar';
+      lis.forEach((li, i) => {
+        const card = document.createElement('article');
+        card.className = 'team__mcard';
+        const ph = document.createElement('div');
+        ph.className = 'team__mcard-photo';
+        if (photos[i]) ph.appendChild(photos[i].cloneNode(true));
+        const name = document.createElement('h3');
+        name.className = 'team__name';
+        const nameEl = li.querySelector('.team__name');
+        name.textContent = (nameEl ? nameEl.textContent : '').trim();
+        const chip = document.createElement('span');
+        chip.className = 'team__chip';
+        const chipEl = li.querySelector('.team__chip');
+        chip.textContent = (chipEl ? chipEl.textContent : '').trim();
+        card.appendChild(ph);
+        card.appendChild(name);
+        card.appendChild(chip);
+        if (bios[i]) {
+          const bio = bios[i].cloneNode(true);
+          bio.classList.remove('fr');
+          // client rev: Numair's desktop-merged logo row is too much for the
+          // narrow card — nomura + ares break onto their own line (mobile only)
+          const nom = bio.querySelector('.team__logos-row img[src*="nomura"]');
+          if (nom && nom.parentElement.children.length > 2) {
+            const row = nom.parentElement;
+            const r2 = document.createElement('div');
+            r2.className = 'team__logos-row';
+            r2.appendChild(nom);
+            const ares = row.querySelector('img[src*="ares"]');
+            if (ares) r2.appendChild(ares);
+            row.after(r2);
+          }
+          card.appendChild(bio);
+        }
+        car.appendChild(card);
+        mcardPhotos.push(ph);
+      });
+      teamPinEl.appendChild(car);
+    }
+
+    // static flat map (map.js loads after main.js — one set(1) is stashed
+    // and applied when the topology lands)
+    const mapWait = setInterval(() => {
+      if (window.colmezMap) { window.colmezMap.set(1); clearInterval(mapWait); }
+    }, 80);
+
+    // ---- goo asset reveals (the crisis/quote/screens ones are already
+    // registered at module level; add the mobile-only medias) ----
+    mcardPhotos.forEach((ph, i) => addReveal(ph, COVER_EB, 0, i * 140, 'mteam'));
+
+    // ---- word / block / fade-rise choreography ----
+    const q = (sel, root) => [...(root || document).querySelectorAll(sel)];
+
+    const heroG = mGroup(document.querySelector('.mhero'), [
+      { els: q('.mhero__logo'), type: 'fr', delay: 0, dur: 800 },
+      { els: q('.mhero .hw'), type: 'w', delay: 250, stag: 90 },
+      { els: q('.mhero__cta'), type: 'cta', delay: 650 },
+    ]);
+    heroG.t0 = performance.now() + 200; // fires at load, not on scroll
+
+    mGroup(document.querySelector('.waste__list'), [
+      { els: q('.waste__list .w'), type: 'w', delay: 100, stag: 45 },
+    ]);
+    mGroup(document.querySelector('.waste__lead'), [
+      { els: q('.waste__lead .w'), type: 'w', delay: 100, stag: 55 },
+    ]);
+
+    mGroup(document.querySelector('.crisis__head'), [
+      { els: q('.crisis__head .cw'), type: 'w', stag: 70 },
+    ]);
+    q('.crisis-item').forEach((it) => mGroup(it, [
+      { els: q('.crisis-item__chip .cw', it), type: 'w' },
+      { els: q('.crisis-item__title .cw', it), type: 'w', delay: 90, stag: 70 },
+      { els: q('.crisis-item__desc', it), type: 'blk', delay: 300 },
+    ]));
+
+    mGroup(document.querySelector('.map__lead'), [
+      { els: q('.map__lead .cw'), type: 'w', stag: 40 },
+    ]);
+
+    mGroup(document.querySelector('.quote__body'), [
+      { els: q('.quote__text'), type: 'blk' },
+      { els: q('.quote__name .cw'), type: 'w', delay: 350, stag: 80 },
+      { els: q('.quote__role'), type: 'fr', delay: 500, stag: 110 },
+    ]);
+
+    mGroup(document.querySelector('.screens__head'), [
+      { els: q('.screens__head .cw'), type: 'w', stag: 60 },
+    ]);
+    q('.screen-item').forEach((it) => mGroup(it, [
+      { els: q('.screen-item__chip .cw', it), type: 'w' },
+      { els: q('.screen-item__title .cw', it), type: 'w', delay: 90, stag: 60 },
+      { els: q('.screen-item__sub', it), type: 'fr', delay: 350 },
+      { els: q('.screen-item__rows li', it), type: 'fr', delay: 450, stag: 110 },
+    ]));
+
+    mGroup(document.querySelector('.security'), [
+      { els: q('.security .screen-item__chip .cw'), type: 'w' },
+      { els: q('.security__head .cw'), type: 'w', delay: 90, stag: 45 },
+      { els: q('.security__badge'), type: 'fr', delay: 600 },
+    ]);
+
+    mGroup(document.querySelector('.team__head'), [
+      { els: q('.team__head .cw'), type: 'w', stag: 70 },
+    ]);
+    q('.team__mcard').forEach((card, ci) => mGroup(card, [
+      { els: q('.team__name, .team__chip', card), type: 'fr', delay: 150 + ci * 120, stag: 90 },
+      { els: q('.team__desc, .team__logos', card), type: 'fr', delay: 380 + ci * 120, stag: 120 },
+    ]));
+
+    // footer group fires on exposure (the sticky underfooter always
+    // intersects the viewport, an observer would fire it at load)
+    mGroups.footer = mGroup(document.querySelector('.footer__content'), [
+      { els: q('.footer__logo img'), type: 'fr', dur: 800 },
+      { els: q('.footer__claim .cw'), type: 'w', delay: 150, stag: 60 },
+      { els: q('.footer__cta'), type: 'cta', delay: 450 },
+      { els: q('.footer__bar .cw'), type: 'w', delay: 650, stag: 45 },
+      { els: q('.footer__bar .fr'), type: 'fr', delay: 900 },
+    ]);
+
+    if (mObs) {
+      for (const g of mGroups) {
+        if (g === heroG || g === mGroups.footer || !g.container) continue;
+        mObs.observe(g.container);
+      }
+    } else {
+      for (const g of mGroups) g.items.forEach(mFinish);
+    }
+
+    // waste sups start at 000
+    q('.waste__list sup[data-n]').forEach((sup) => { sup.textContent = '000'; });
+  }
+
+  let mLastTs = 0;
+  function mobileLoop(ts) {
+    const dt = Math.min(0.05, (ts - mLastTs) / 1000 || 0.016);
+    mLastTs = ts;
+    updateStir(ts, dt);
+
+    // hero: pattern draws in under the photo while the photo dissolves into
+    // it (goo); as the words ride onto the pattern it dims under them
+    const hp = heroDissolveP();
+    const dis = REDUCED ? (hp > 0.4 ? 1 : 0) : easeInOut(seg(hp, 0.04, 0.72));
+    renderPattern(easeInOut(seg(hp, 0, 0.6)), ts, 1 - 0.42 * seg(hp, 0.55, 0.95));
+    renderGoo(dis);
+    photoLayer.style.setProperty('--dissolve', dis.toFixed(3)); // no-WebGL fallback fade
+
+    runWordAnims(ts);
+    updateReveals(ts);
+
+    // footer: pattern at full colour + entrance once it is exposed
+    const ex = footerExposure();
+    if (patReady && ex > 0.002) {
+      if (!fpCanvas.width) resizeFooterPattern();
+      paintPattern(fpctx, fpCanvas.width, fpCanvas.height, fpScale, fpOx, fpOy, 1, ts, 1, !REDUCED);
+    }
+    if (mFooterT0 < 0 && ex > 0.3) { mFooterT0 = ts; mGroups.footer.t0 = ts; }
+
+    requestAnimationFrame(mobileLoop);
+  }
+
+  let mResizeRaf = 0;
+  function onResizeMobile() {
+    cancelAnimationFrame(mResizeRaf);
+    mResizeRaf = requestAnimationFrame(() => {
+      resizeGL();
+      resizePattern();
+      resizeFooterPattern();
+      lastPatKey = '';
+    });
+  }
+
   // ---------- boot ----------
-  hint.addEventListener('click', (e) => {
-    e.preventDefault();
-    // jump to the stage end: list and lead fully filled, crisis at the doorstep
-    window.scrollTo({ top: stage.offsetTop + (stage.offsetHeight - window.innerHeight), behavior: 'smooth' });
-  });
   window.addEventListener('pointermove', onPointerMove, { passive: true });
 
   let resizeRaf = 0;
@@ -1883,21 +2667,38 @@
       resizeLogoFx();
       resizeCtaFx();
       resizeMiniFx();
+      resizeFooterPattern();
+      resizeFooterLogo();
       layoutWords();
       lastTextP = -1; lastHeroP = -1; lastNavT = -1; lastPatKey = ''; lastCrisisKey = ''; lastQSKey = '';
       dirty = true;
     });
   }
 
-  if (!initGL()) photoLayer.classList.remove('has-gl');
-  initLogoGL();
-  initCtaGL();
-  initMiniLogoGL();
-  initPreloader();
-  loadPattern();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutWords(); dirty = true; });
-  window.addEventListener('resize', onResize);
-  window.addEventListener('load', onResize);
-  onResize();
-  requestAnimationFrame(loop);
+  if (MOBILE) {
+    bootMobile();
+    loadPattern();
+    window.addEventListener('resize', onResizeMobile);
+    window.addEventListener('load', onResizeMobile);
+    onResizeMobile();
+    requestAnimationFrame(mobileLoop);
+  } else {
+    hint.addEventListener('click', (e) => {
+      e.preventDefault();
+      // jump to the stage end: list and lead fully filled, crisis at the doorstep
+      window.scrollTo({ top: stage.offsetTop + (stage.offsetHeight - window.innerHeight), behavior: 'smooth' });
+    });
+    if (!initGL()) photoLayer.classList.remove('has-gl');
+    initLogoGL();
+    initCtaGL();
+    initMiniLogoGL();
+    initFooterLogoGL();
+    initPreloader();
+    loadPattern();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutWords(); dirty = true; });
+    window.addEventListener('resize', onResize);
+    window.addEventListener('load', onResize);
+    onResize();
+    requestAnimationFrame(loop);
+  }
 })();
