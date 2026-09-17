@@ -3,7 +3,7 @@
 Front-end build of the Colmez landing page, coded from the Figma design
 ([SR007 · Colmez · Web Design](https://www.figma.com/design/2khiIGWYhHvey6iWyuhFlX/-SR007--Colmez--Web-Design?node-id=9236-1110)).
 
-**Live preview:** https://szyna-tonik.github.io/colmez-lp/
+**Live preview:** https://tonik.github.io/colmez-lp/
 
 ## Stack
 
