@@ -54,7 +54,16 @@
   // Crossing the breakpoint reloads so the right build boots.
   const MOBILE_MQ = matchMedia('(max-width: 767px)');
   const MOBILE = MOBILE_MQ.matches;
-  const mqReload = () => location.reload();
+  // Only a crossing that is still true a moment later, and only if it really differs from the
+  // build that booted. A window dragged across the breakpoint fires `change` many times, and a
+  // full-page screenshot flips the query and flips it straight back - the bare listener reloaded
+  // on every one of those, and during a capture it reloaded about twice a second for as long as
+  // the capture ran, so the page never finished loading and nothing could read it.
+  let mqTimer = 0;
+  const mqReload = () => {
+    clearTimeout(mqTimer);
+    mqTimer = setTimeout(() => { if (MOBILE_MQ.matches !== MOBILE) location.reload(); }, 400);
+  };
   if (MOBILE_MQ.addEventListener) MOBILE_MQ.addEventListener('change', mqReload);
   else if (MOBILE_MQ.addListener) MOBILE_MQ.addListener(mqReload);
 
